@@ -60,7 +60,7 @@ def _check_filter_and_names() -> None:
 
     db = Database()
     names = db.load_nomenclature_names()
-    assert len(names) >= 1, "Нет номенклатуры (проверьте shablon/*.xlsx)"
+    assert len(names) >= 1, "Нет номенклатуры (первый запуск: shablon/*.xlsx → каталог в БД)"
 
     today = date.today().isoformat()
     rows_a = db.get_data("A", today)
@@ -128,7 +128,7 @@ def _check_reports() -> None:
 
     db = Database()
     today = date.today()
-    movements = db.report_movements("A", today, today)
+    movements = db.report_movements("A", today, today, detail_by="by_date")
     stock = db.report_stock("A", today)
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
@@ -137,6 +137,7 @@ def _check_reports() -> None:
             warehouse_name="Склад А",
             date_from=today,
             date_to=today,
+            detail_by="by_date",
             output_dir=out,
         )
         p2 = generate_stock_pdf(
@@ -149,6 +150,8 @@ def _check_reports() -> None:
         assert p2.is_file() and p2.stat().st_size > 100
         assert p1.read_bytes()[:4] == b"%PDF"
         assert p2.read_bytes()[:4] == b"%PDF"
+    by_item = db.report_movements("A", today, today, detail_by="by_item")
+    assert isinstance(by_item, list)
     print("OK [5] Отчёты PDF")
 
 
@@ -190,7 +193,7 @@ def _check_ui_smoke() -> None:
 
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
-    assert window.table.columnCount() == 9
+    assert window.table.columnCount() == 8
     assert window.table.rowCount() >= 1
     row = 0
     window.table.item(row, COL_INCOMING).setText("7")
