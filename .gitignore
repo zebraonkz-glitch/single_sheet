@@ -156,4 +156,7 @@ inventory_app/db/*.db
 inventory_app/db/*.db-journal
 inventory_app/backups/*.zip
 inventory_app/reports/*.pdf
+inventory_app/build/
+inventory_app/dist/
+inventory_app/*.spec
 ~$*.xlsx

@@ -1,2 +1,20 @@
 # single_sheet
-Веб-приложение для учета движения товаров на одном листе (аналог Excel-таблицы), с фильтрацией по складу и дате, а также отдельной вкладкой для генерации отчетов. Данные должны быть динамическими: остаток на конец рассчитывается автоматически на основе остатка на начало и всех операций (приход/расход).
+
+Офлайн-десктопное приложение складского учёта (Python + SQLite + PyQt6).
+
+Рабочий код: каталог [`inventory_app/`](inventory_app/). Спецификация: [`project.md`](project.md), план: [`plan.md`](plan.md).
+
+## Быстрый старт (PowerShell)
+
+```powershell
+cd d:\20260725_work\single_sheet\inventory_app
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python main.py
+```
+
+Приёмка: `python acceptance_check.py`  
+Сборка exe: `.\build.ps1`
+
+Подробности — в [`inventory_app/README.md`](inventory_app/README.md).

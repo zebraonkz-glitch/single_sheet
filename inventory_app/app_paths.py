@@ -1,16 +1,28 @@
 """
 Работа с конфигурацией и путями приложения.
-Корень приложения — каталог, где лежит этот файл (inventory_app/).
+
+Корень:
+- в режиме разработки — каталог inventory_app/;
+- в собранном exe (PyInstaller) — папка рядом с .exe
+  (туда кладутся config.json, db/, backups/, reports/, shablon/).
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 
-APP_ROOT = Path(__file__).resolve().parent
+def get_app_root() -> Path:
+    """Каталог приложения (данные и конфиг)."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+APP_ROOT = get_app_root()
 CONFIG_PATH = APP_ROOT / "config.json"
 
 
@@ -31,7 +43,7 @@ def save_config(config: dict[str, Any], config_path: Path | None = None) -> None
 
 def resolve_path(relative: str, base: Path | None = None) -> Path:
     """Преобразует путь из конфига в абсолютный относительно APP_ROOT."""
-    root = base or APP_ROOT
+    root = base or get_app_root()
     path = Path(relative)
     if path.is_absolute():
         return path
@@ -42,11 +54,13 @@ def get_paths(config: dict[str, Any] | None = None) -> dict[str, Path]:
     """Возвращает абсолютные пути db / backups / reports / shablon."""
     cfg = config if config is not None else load_config()
     paths_cfg = cfg.get("paths", {})
+    # В сборке shablon лежит рядом с exe; в разработке — ../shablon
+    default_shablon = "shablon" if getattr(sys, "frozen", False) else "../shablon"
     return {
         "db": resolve_path(paths_cfg.get("db", "db/inventory.db")),
         "backups": resolve_path(paths_cfg.get("backups", "backups")),
         "reports": resolve_path(paths_cfg.get("reports", "reports")),
-        "shablon": resolve_path(paths_cfg.get("shablon", "../shablon")),
+        "shablon": resolve_path(paths_cfg.get("shablon", default_shablon)),
     }
 
 

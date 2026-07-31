@@ -10,7 +10,7 @@
 |--------|--------|
 | Спецификация `project.md` | Готова |
 | Шаблон номенклатуры `shablon/` | Есть (`20260730 tz sklad.xlsx`) |
-| Код приложения | Этапы 1–6 готовы (`inventory_app/`) |
+| Код приложения | Этапы 1–7 готовы (`inventory_app/`) |
 | Структура `inventory_app/` | Создана |
 
 ---
@@ -189,13 +189,13 @@ CREATE INDEX idx_warehouse_date ON operations(warehouse_id, operation_date);
 ### Этап 7. Сборка, тесты, документация
 **Результат:** готовый к выдаче пользователю артефакт.
 
-- [ ] Ручной чек-лист по критериям приёмки (`project.md` §9)
-- [ ] Проверка офлайн (нет сетевых вызовов)
-- [ ] Сборка exe: PyInstaller
-- [ ] README: запуск, пути папок, очистка `backups/`, работа с шаблоном
-- [ ] `.gitignore`: `db/*.db`, `backups/`, `reports/`, `__pycache__/`, venv
+- [x] Ручной чек-лист по критериям приёмки (`acceptance_check.py`)
+- [x] Проверка офлайн (нет сетевых вызовов в исходниках)
+- [x] Сборка exe: PyInstaller (`build.ps1` → `dist/SkladUchet/`)
+- [x] README: запуск, пути папок, очистка `backups/`, работа с шаблоном
+- [x] `.gitignore`: `db/*.db`, `backups/`, `reports/`, `__pycache__/`, venv, `dist/`, `build/`
 
-**Критерий:** приложение проходит acceptance criteria; exe запускается на чистой Windows без Python (или с оговоркой в README).
+**Критерий:** приложение проходит acceptance criteria; exe запускается на чистой Windows без Python (папка `dist/SkladUchet` целиком).
 
 ---
 
@@ -259,4 +259,4 @@ CREATE INDEX idx_warehouse_date ON operations(warehouse_id, operation_date);
 
 ## 10. Следующий шаг
 
-Этапы 1–6 выполнены. Далее — **Этап 7** (тесты приёмки, README, сборка PyInstaller).
+Все этапы 1–7 выполнены. Приложение готово к использованию и сборке exe (`inventory_app\build.ps1`).
