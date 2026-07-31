@@ -55,7 +55,15 @@ $Excludes = @(
   "tkinter",
   "matplotlib",
   "numpy",
-  "pandas"
+  "pandas",
+  "ssl",
+  "_ssl",
+  "http",
+  "http.client",
+  "urllib",
+  "urllib.request",
+  "xmlrpc",
+  "multiprocessing.popen_spawn_win32"
 )
 
 # fpdf2 требует fontTools при импорте — не исключаем
@@ -106,6 +114,25 @@ if (Test-Path $Plugins) {
   Get-ChildItem $Plugins -Directory | Where-Object { $KeepPlugins -notcontains $_.Name } | ForEach-Object {
     Write-Host "==> Removing plugin: $($_.Name)"
     Remove-Item -Recurse -Force $_.FullName
+  }
+}
+
+# Imageformats: оставляем ico/gif (иконки), убираем jpeg/webp/tiff и пр.
+$ImgFmt = Join-Path $Plugins "imageformats"
+if (Test-Path $ImgFmt) {
+  $KeepImg = @("qico.dll", "qgif.dll")
+  Get-ChildItem $ImgFmt -File | Where-Object { $KeepImg -notcontains $_.Name } | ForEach-Object {
+    Write-Host "==> Removing imageformat: $($_.Name)"
+    Remove-Item -Force $_.FullName
+  }
+}
+
+# Офлайн-приложение: SSL не нужен (~7 МБ)
+foreach ($name in @("libssl-3.dll", "libcrypto-3.dll", "_ssl.pyd")) {
+  $p = Join-Path $Internal $name
+  if (Test-Path $p) {
+    Write-Host "==> Removing: $name"
+    Remove-Item -Force $p
   }
 }
 
