@@ -333,6 +333,7 @@ def generate_stock_pdf(
     warehouse_name: str,
     as_of_date: date | str,
     all_warehouses: bool = False,
+    hide_zero_stock: bool = False,
     output_dir: Path | None = None,
 ) -> Path:
     """PDF: актуальные остатки. Возвращает путь к файлу."""
@@ -344,9 +345,12 @@ def generate_stock_pdf(
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     out_path = out_dir / f"report_stock_{stamp}.pdf"
 
+    subtitle = f"Склад: {warehouse_name}. На дату: {as_of}"
+    if hide_zero_stock:
+        subtitle += ". Без нулевых остатков"
     pdf = ReportPDF(
         "Актуальные остатки",
-        f"Склад: {warehouse_name}. На дату: {as_of}",
+        subtitle,
     )
     pdf.add_page()
     if all_warehouses:

@@ -22,6 +22,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDateEdit,
     QHBoxLayout,
@@ -186,6 +187,7 @@ class MainWindow(QMainWindow):
         self._report_rows: list[dict[str, Any]] = []
         self._report_detail_by = DETAIL_BY_DATE
         self._report_all_warehouses = False
+        self._report_hide_zero = False
         self._last_pdf_path: Path | None = None
         self._highlight_row = -1
         self._highlight_col = -1
@@ -326,6 +328,11 @@ class MainWindow(QMainWindow):
         self.report_date_to.setDisplayFormat("dd.MM.yyyy")
         self.report_date_to.setDate(QDate.currentDate())
         filters.addWidget(self.report_date_to)
+
+        filters.addSpacing(12)
+        self.report_hide_zero = QCheckBox("Не показывать нулевые остатки")
+        self.report_hide_zero.setChecked(False)
+        filters.addWidget(self.report_hide_zero)
 
         filters.addStretch()
         layout.addLayout(filters)
@@ -564,10 +571,12 @@ class MainWindow(QMainWindow):
 
     def _on_report_type_changed(self, *_args: Any) -> None:
         is_movements = self.report_type.currentData() == REPORT_MOVEMENTS
+        is_stock = self.report_type.currentData() == REPORT_STOCK
         self.report_from_label.setVisible(is_movements)
         self.report_date_from.setVisible(is_movements)
         self.report_detail_label.setVisible(is_movements)
         self.report_detail.setVisible(is_movements)
+        self.report_hide_zero.setVisible(is_stock)
         self.report_to_label.setText("Дата до:" if is_movements else "На дату:")
 
     def _build_report_preview(self) -> None:
@@ -672,6 +681,12 @@ class MainWindow(QMainWindow):
                     wid = row.get("warehouse_id")
                     if wid:
                         row["warehouse_name"] = self._warehouse_label(str(wid))
+                if self.report_hide_zero.isChecked():
+                    self._report_rows = [
+                        row
+                        for row in self._report_rows
+                        if abs(float(row.get("final_stock") or 0)) > 1e-12
+                    ]
                 if all_warehouses:
                     headers = ["Склад", "Наименование", "Остаток"]
                     keys = ["warehouse_name", "item_name", "final_stock"]
@@ -679,12 +694,15 @@ class MainWindow(QMainWindow):
                     headers = ["Наименование", "Остаток"]
                     keys = ["item_name", "final_stock"]
                 detail_by = ""
+                self._report_hide_zero = self.report_hide_zero.isChecked()
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Отчёт", str(exc))
             return
 
         self._report_detail_by = detail_by
         self._report_all_warehouses = all_warehouses
+        if report_kind != REPORT_STOCK:
+            self._report_hide_zero = False
         self.report_table.clear()
         self.report_table.setColumnCount(len(headers))
         self.report_table.setHorizontalHeaderLabels(headers)
@@ -777,6 +795,8 @@ class MainWindow(QMainWindow):
                 f". Детализация: {mode_label}. "
                 "*Перемещение — справочно, в итог не входит (итог = приход − расход)."
             )
+        elif report_kind == REPORT_STOCK and self.report_hide_zero.isChecked():
+            status += ". Нулевые остатки скрыты"
         self.report_status.setText(status)
 
     def _fmt_report_date(self, value: Any) -> str:
@@ -826,6 +846,7 @@ class MainWindow(QMainWindow):
                     warehouse_name=warehouse_name,
                     as_of_date=date_to,
                     all_warehouses=bool(self._report_all_warehouses),
+                    hide_zero_stock=bool(self._report_hide_zero),
                 )
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "PDF", str(exc))
