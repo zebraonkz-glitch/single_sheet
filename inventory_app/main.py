@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import QDate, QRegularExpression, QUrl, Qt
+from PyQt6.QtCore import QDate, QLockFile, QRegularExpression, QUrl, Qt
 from PyQt6.QtGui import (
     QBrush,
     QCloseEvent,
@@ -270,7 +270,9 @@ class MainWindow(QMainWindow):
         buttons.addWidget(btn_add)
 
         btn_delete = QPushButton("В архив")
-        btn_delete.setToolTip("Сделать позицию архивной и переместить в конец списка")
+        btn_delete.setToolTip(
+            "Архивировать позицию или вернуть из архива (повторное нажатие)"
+        )
         btn_delete.clicked.connect(self._archive_row)
         buttons.addWidget(btn_delete)
 
@@ -648,36 +650,40 @@ class MainWindow(QMainWindow):
                             "Дата",
                             "Склад",
                             "Товар",
+                            "На начало",
                             "Приход",
                             "Расход",
                             "Перемещение*",
-                            "Итог",
+                            "На конец",
                         ]
                         keys = [
                             "operation_date",
                             "warehouse_name",
                             "item_name",
+                            "initial_stock",
                             "incoming",
                             "consumption",
                             "move_stock",
-                            "total",
+                            "final_stock",
                         ]
                     else:
                         headers = [
                             "Дата",
                             "Товар",
+                            "На начало",
                             "Приход",
                             "Расход",
                             "Перемещение*",
-                            "Итог",
+                            "На конец",
                         ]
                         keys = [
                             "operation_date",
                             "item_name",
+                            "initial_stock",
                             "incoming",
                             "consumption",
                             "move_stock",
-                            "total",
+                            "final_stock",
                         ]
             else:
                 self._report_rows = self.db.report_stock(warehouse_id, date_to)
@@ -795,17 +801,11 @@ class MainWindow(QMainWindow):
             mode_label = (
                 "по датам" if detail_by == DETAIL_BY_DATE else "по товару"
             )
-            status += f". Детализация: {mode_label}."
-            if detail_by == DETAIL_BY_ITEM:
-                status += (
-                    " *Перемещение — справочно. "
-                    "На начало / на конец — остатки на дату строки."
-                )
-            else:
-                status += (
-                    " *Перемещение — справочно, в итог не входит "
-                    "(итог = приход − расход)."
-                )
+            status += (
+                f". Детализация: {mode_label}. "
+                "*Перемещение — справочно. "
+                "На начало / на конец — остатки на дату строки."
+            )
         elif report_kind == REPORT_STOCK and self.report_hide_zero.isChecked():
             status += ". Нулевые остатки скрыты"
         self.report_status.setText(status)
@@ -1371,7 +1371,7 @@ class MainWindow(QMainWindow):
         self.table.editItem(self.table.item(row, COL_NAME))
 
     def _archive_row(self) -> None:
-        """Делает позицию архивной и перемещает в конец списка (без удаления данных)."""
+        """Архивирует позицию или возвращает из архива (без удаления данных)."""
         row = self.table.currentRow()
         if row < 0:
             QMessageBox.information(self, "Архив", "Выберите строку.")
@@ -1387,29 +1387,33 @@ class MainWindow(QMainWindow):
         already = False
         if name_item is not None:
             already = bool(name_item.data(ROLE_ARCHIVED))
+
         if already:
-            QMessageBox.information(
+            answer = QMessageBox.question(
                 self,
                 "Архив",
-                f"«{item_name}» уже в архиве (в конце списка).",
+                f"Вернуть «{item_name}» из архива в общий список?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
             )
-            return
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self.db.unarchive_nomenclature_item(item_name)
+        else:
+            answer = QMessageBox.question(
+                self,
+                "Архив",
+                f"Переместить «{item_name}» в архив (в конец списка)?\n"
+                "Данные по движениям сохранятся.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self.db.archive_nomenclature_item(item_name)
 
-        answer = QMessageBox.question(
-            self,
-            "Архив",
-            f"Переместить «{item_name}» в архив (в конец списка)?\n"
-            "Данные по движениям сохранятся.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-
-        self.db.archive_nomenclature_item(item_name)
         self._load_table()
-        # Курсор на архивную строку в конце
-        for r in range(self.table.rowCount() - 1, -1, -1):
+        for r in range(self.table.rowCount()):
             cell = self.table.item(r, COL_NAME)
             if cell and cell.text().strip() == item_name:
                 self.table.setCurrentCell(r, COL_NAME)
@@ -1481,11 +1485,28 @@ class MainWindow(QMainWindow):
 
 
 def main() -> int:
-    ensure_directories()
+    paths = ensure_directories()
+    # Один экземпляр: блокировка рядом с БД (общая на эту установку)
+    lock_path = paths["db"].parent / "sklad_uchet.lock"
+    lock_file = QLockFile(str(lock_path))
+    # Если процесс упал — через 30 с блокировку можно перехватить
+    lock_file.setStaleLockTime(30_000)
+
     app = QApplication(sys.argv)
+    if not lock_file.tryLock(100):
+        QMessageBox.warning(
+            None,
+            "Складской учёт",
+            "Программа уже запущена.\nПовторный запуск невозможен.",
+        )
+        return 1
+
     window = MainWindow()
     window.show()
-    return app.exec()
+    try:
+        return app.exec()
+    finally:
+        lock_file.unlock()
 
 
 if __name__ == "__main__":

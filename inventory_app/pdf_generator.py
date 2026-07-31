@@ -204,11 +204,28 @@ def generate_movements_pdf(
             col_widths = [55, 25, 25, 25, 28, 25]
     else:
         if all_warehouses:
-            headers = ["Дата", "Склад", "Товар", "Приход", "Расход", "Перем.*", "Итог"]
-            col_widths = [22, 24, 48, 22, 22, 26, 22]
+            headers = [
+                "Дата",
+                "Склад",
+                "Товар",
+                "Начало",
+                "Приход",
+                "Расход",
+                "Перем.*",
+                "Конец",
+            ]
+            col_widths = [20, 22, 40, 20, 20, 20, 24, 20]
         else:
-            headers = ["Дата", "Товар", "Приход", "Расход", "Перем.*", "Итог"]
-            col_widths = [22, 70, 24, 24, 26, 24]
+            headers = [
+                "Дата",
+                "Товар",
+                "Начало",
+                "Приход",
+                "Расход",
+                "Перем.*",
+                "Конец",
+            ]
+            col_widths = [22, 50, 22, 22, 22, 26, 22]
 
     table_rows: list[list[str]] = []
     row_kinds: list[str] = []
@@ -282,10 +299,11 @@ def generate_movements_pdf(
                             "",
                             "",
                             "Итого",
+                            _fmt_num(r.get("initial_stock")),
                             _fmt_num(r.get("incoming")),
                             _fmt_num(r.get("consumption")),
                             _fmt_num(r.get("move_stock")),
-                            _fmt_num(r.get("total")),
+                            _fmt_num(r.get("final_stock")),
                         ]
                     )
                 else:
@@ -293,10 +311,11 @@ def generate_movements_pdf(
                         [
                             "",
                             "Итого",
+                            _fmt_num(r.get("initial_stock")),
                             _fmt_num(r.get("incoming")),
                             _fmt_num(r.get("consumption")),
                             _fmt_num(r.get("move_stock")),
-                            _fmt_num(r.get("total")),
+                            _fmt_num(r.get("final_stock")),
                         ]
                     )
             else:
@@ -306,10 +325,11 @@ def generate_movements_pdf(
                             _fmt_date(r.get("operation_date")),
                             wh,
                             str(r.get("item_name") or ""),
+                            _fmt_num(r.get("initial_stock")),
                             _fmt_num(r.get("incoming")),
                             _fmt_num(r.get("consumption")),
                             _fmt_num(r.get("move_stock")),
-                            _fmt_num(r.get("total")),
+                            _fmt_num(r.get("final_stock")),
                         ]
                     )
                 else:
@@ -317,10 +337,11 @@ def generate_movements_pdf(
                         [
                             _fmt_date(r.get("operation_date")),
                             str(r.get("item_name") or ""),
+                            _fmt_num(r.get("initial_stock")),
                             _fmt_num(r.get("incoming")),
                             _fmt_num(r.get("consumption")),
                             _fmt_num(r.get("move_stock")),
-                            _fmt_num(r.get("total")),
+                            _fmt_num(r.get("final_stock")),
                         ]
                     )
 
@@ -345,8 +366,9 @@ def generate_movements_pdf(
         )
     else:
         note = (
-            "* Перемещение указано справочно и не входит в итог. "
-            "Итог = приход − расход."
+            "* Перемещение указано справочно. "
+            "Начало / конец — остатки на дату строки. "
+            "В итоге по дате — сумма остатков по позициям."
         )
     pdf.multi_cell(0, 5, note)
     pdf.output(str(out_path))

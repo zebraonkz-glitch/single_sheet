@@ -337,6 +337,48 @@ class Database:
             conn.commit()
         return True
 
+    def unarchive_nomenclature_item(self, item_name: str) -> bool:
+        """
+        Снимает позицию с архива и ставит в конец активных (до архивных).
+        Данные операций не удаляются.
+        """
+        name = str(item_name).strip()
+        if not name:
+            return False
+        with self.connect() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM nomenclature WHERE item_name = ?",
+                (name,),
+            ).fetchone()
+            row = conn.execute(
+                """
+                SELECT COALESCE(MAX(sort_order), -1) AS m
+                FROM nomenclature
+                WHERE is_archived = 0 AND item_name != ?
+                """,
+                (name,),
+            ).fetchone()
+            next_order = int(row["m"]) + 1
+            if not exists:
+                conn.execute(
+                    """
+                    INSERT INTO nomenclature (item_name, sort_order, is_archived)
+                    VALUES (?, ?, 0)
+                    """,
+                    (name, next_order),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE nomenclature
+                    SET is_archived = 0, sort_order = ?
+                    WHERE item_name = ?
+                    """,
+                    (next_order, name),
+                )
+            conn.commit()
+        return True
+
     def remove_nomenclature_item(self, item_name: str) -> None:
         """Удаляет наименование из каталога (используется редко)."""
         name = str(item_name).strip()
@@ -957,7 +999,8 @@ class Database:
             sub_in = sum(float(r.get("incoming") or 0) for r in group)
             sub_cons = sum(float(r.get("consumption") or 0) for r in group)
             sub_move = sum(float(r.get("move_stock") or 0) for r in group)
-            # По товару: на начало — у первой даты группы, на конец — у последней
+            # По товару: начало — первая дата, конец — последняя.
+            # По датам: сумма остатков по позициям дня.
             first_initial = float(group[0].get("initial_stock") or 0)
             last_final = group[-1].get("final_stock")
             if last_final is None:
@@ -970,6 +1013,20 @@ class Database:
                 )
             else:
                 last_final = float(last_final or 0)
+
+            sum_initial = sum(float(r.get("initial_stock") or 0) for r in group)
+            sum_final = 0.0
+            for r in group:
+                fin = r.get("final_stock")
+                if fin is None:
+                    sum_final += (
+                        float(r.get("initial_stock") or 0)
+                        + float(r.get("incoming") or 0)
+                        + float(r.get("move_stock") or 0)
+                        - float(r.get("consumption") or 0)
+                    )
+                else:
+                    sum_final += float(fin or 0)
 
             subtotal: dict[str, Any] = {
                 "row_kind": "subtotal",
@@ -987,8 +1044,8 @@ class Database:
                 subtotal["initial_stock"] = first_initial
                 subtotal["final_stock"] = last_final
             else:
-                subtotal["initial_stock"] = None
-                subtotal["final_stock"] = None
+                subtotal["initial_stock"] = sum_initial
+                subtotal["final_stock"] = sum_final
             result.append(subtotal)
 
         return result
