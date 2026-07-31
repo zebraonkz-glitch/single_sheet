@@ -52,12 +52,13 @@ $Excludes = @(
   "PyQt6.QtXml",
   "PIL",
   "Pillow",
-  "fontTools",
   "tkinter",
   "matplotlib",
   "numpy",
   "pandas"
 )
+
+# fpdf2 требует fontTools при импорте — не исключаем
 
 $ExcludeArgs = @()
 foreach ($mod in $Excludes) {

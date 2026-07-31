@@ -965,6 +965,17 @@ class MainWindow(QMainWindow):
                     value = 0.0
                 self._apply_final_style(row, value)
 
+    def _row_movements_are_zero(self, row: int) -> bool:
+        """True, если приход/перемещение/расходы в строке равны нулю."""
+        for col in (COL_INCOMING, COL_MOVE, COL_CONS1, COL_CONS2, COL_CONS3):
+            item = self.table.item(row, col)
+            parsed = _parse_number(item.text() if item else "0")
+            if parsed is None:
+                continue
+            if abs(parsed) > 1e-12:
+                return False
+        return True
+
     def _read_row(self, row: int) -> dict[str, Any] | None:
         """Читает строку таблицы в словарь для БД. None — если нет наименования."""
         name_item = self.table.item(row, COL_NAME)
@@ -996,6 +1007,8 @@ class MainWindow(QMainWindow):
             data["final_stock"] = (
                 0.0 if parsed_final is None else parsed_final
             )
+            # Не пересчитывать формулой при сохранении — иначе остаток сбросится в 0
+            data["preserve_final_stock"] = True
         else:
             data["final_stock"] = calc_final_stock(**data)
         return data
@@ -1082,7 +1095,7 @@ class MainWindow(QMainWindow):
             if row >= 0:
                 self._apply_row_highlight(row)
 
-    def _update_final_cell(self, row: int) -> float:
+    def _update_final_cell(self, row: int, *, force_formula: bool = False) -> float:
         """Пересчитывает и показывает «Остаток на конец» для строки."""
         data = self._read_row(row)
         if data is None:
@@ -1093,6 +1106,8 @@ class MainWindow(QMainWindow):
                 parsed = _parse_number(item.text() if item else "0")
                 values[field] = 0.0 if parsed is None else parsed
             final = calc_final_stock(**values)
+        elif force_formula or not self._is_stock_entry_day():
+            final = calc_final_stock(**data)
         else:
             final = float(data["final_stock"])
 
@@ -1169,6 +1184,23 @@ class MainWindow(QMainWindow):
                     finally:
                         self._loading = False
             self._apply_final_style(row, parsed)
+            # Без движений «начало» = «конец», чтобы остаток ушёл на следующий день
+            if self._row_movements_are_zero(row):
+                self._loading = True
+                try:
+                    init_item = self.table.item(row, COL_INITIAL)
+                    if init_item is None:
+                        init_item = QTableWidgetItem()
+                        init_item.setTextAlignment(
+                            int(
+                                Qt.AlignmentFlag.AlignRight
+                                | Qt.AlignmentFlag.AlignVCenter
+                            )
+                        )
+                        self.table.setItem(row, COL_INITIAL, init_item)
+                    init_item.setText(_fmt_number(parsed))
+                finally:
+                    self._loading = False
             if row == self.table.currentRow():
                 self._apply_row_highlight(row)
             self._autosave_row(row)
@@ -1197,7 +1229,7 @@ class MainWindow(QMainWindow):
                         self._loading = False
 
             # При изменении начала/движений конец пересчитываем по формуле
-            self._update_final_cell(row)
+            self._update_final_cell(row, force_formula=True)
 
             if col == COL_MOVE and self._move_prompt_armed and not self._move_prompt_open:
                 name_item = self.table.item(row, COL_NAME)

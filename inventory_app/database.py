@@ -463,7 +463,19 @@ class Database:
 
             rows = conn.execute(
                 """
-                SELECT item_name, final_stock
+                SELECT
+                    item_name,
+                    CASE
+                        WHEN COALESCE(incoming, 0) = 0
+                             AND COALESCE(move_stock, 0) = 0
+                             AND COALESCE(consumption_1, 0) = 0
+                             AND COALESCE(consumption_2, 0) = 0
+                             AND COALESCE(consumption_3, 0) = 0
+                             AND COALESCE(final_stock, 0) = 0
+                             AND COALESCE(initial_stock, 0) != 0
+                        THEN initial_stock
+                        ELSE final_stock
+                    END AS final_stock
                 FROM operations
                 WHERE warehouse_id = ? AND operation_date = ?
                 """,
@@ -1005,7 +1017,11 @@ class Database:
     # ------------------------------------------------------------------
 
     def _prepare_payload(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Нормализует поля и считает final_stock."""
+        """
+        Нормализует поля и считает final_stock.
+        Если data['preserve_final_stock']=True — берёт final_stock из data
+        (нужно для дня ввода остатков, когда конец задают вручную).
+        """
         if not data.get("item_name"):
             raise ValueError("Поле item_name обязательно")
         if not data.get("warehouse_id"):
@@ -1024,7 +1040,10 @@ class Database:
                 continue
             payload[field] = float(data.get(field) or 0)
 
-        payload["final_stock"] = calc_final_stock(**payload)
+        if data.get("preserve_final_stock"):
+            payload["final_stock"] = float(data.get("final_stock") or 0)
+        else:
+            payload["final_stock"] = calc_final_stock(**payload)
         return payload
 
 
