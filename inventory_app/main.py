@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
     QDateEdit,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -58,6 +59,9 @@ COL_FINAL = 7
 # Служебные данные в ячейке «Наименование»
 ROLE_ROW_ID = int(Qt.ItemDataRole.UserRole)
 ROLE_ARCHIVED = int(Qt.ItemDataRole.UserRole) + 1
+
+# Пароль для опасных действий в настройках
+SETTINGS_PASSWORD = "1234"
 
 COLUMN_HEADERS = [
     "Наименование",
@@ -355,7 +359,7 @@ class MainWindow(QMainWindow):
         return page
 
     def _build_settings_tab(self) -> QWidget:
-        """Вкладка настроек: дата ввода остатков."""
+        """Вкладка настроек: дата ввода остатков и очистка базы."""
         page = QWidget()
         layout = QVBoxLayout(page)
 
@@ -370,7 +374,8 @@ class MainWindow(QMainWindow):
             "Только в указанную дату можно редактировать «Остаток на начало» "
             "и «Остаток на конец».\n"
             "В остальные дни эти поля недоступны для ввода: остаток на начало "
-            "берётся с предыдущего дня, остаток на конец считается по формуле."
+            "берётся с предыдущего дня, остаток на конец считается по формуле.\n"
+            "Смена даты защищена паролем."
         )
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -397,8 +402,43 @@ class MainWindow(QMainWindow):
 
         self.settings_status = QLabel("")
         layout.addWidget(self.settings_status)
+
+        layout.addSpacing(24)
+        danger_title = QLabel("Данные")
+        danger_title.setFont(title_font)
+        layout.addWidget(danger_title)
+
+        danger_hint = QLabel(
+            "«Очистить данные» удаляет все операции учёта и каталог номенклатуры.\n"
+            "После очистки номенклатура снова загружается из Excel-шаблона "
+            "(если файл есть в папке shablon).\n"
+            "Действие необратимо и требует пароль."
+        )
+        danger_hint.setWordWrap(True)
+        layout.addWidget(danger_hint)
+
+        btn_clear = QPushButton("Очистить данные…")
+        btn_clear.setStyleSheet("color: #b00020; font-weight: bold;")
+        btn_clear.clicked.connect(self._clear_all_data)
+        layout.addWidget(btn_clear)
+
         layout.addStretch()
         return page
+
+    def _ask_settings_password(self, action_title: str) -> bool:
+        """Запрашивает пароль настроек. True — пароль верный."""
+        password, ok = QInputDialog.getText(
+            self,
+            action_title,
+            "Введите пароль:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return False
+        if password != SETTINGS_PASSWORD:
+            QMessageBox.warning(self, action_title, "Неверный пароль.")
+            return False
+        return True
 
     def _stock_entry_date(self) -> date | None:
         """Дата ввода остатков из config.json или None."""
@@ -416,7 +456,16 @@ class MainWindow(QMainWindow):
         return entry is not None and entry == self._current_date()
 
     def _save_settings(self) -> None:
-        """Сохраняет дату ввода остатков в config.json."""
+        """Сохраняет дату ввода остатков в config.json (после пароля)."""
+        if not self._ask_settings_password("Смена даты ввода остатков"):
+            # Вернуть дату в поле к сохранённому значению
+            entry = self._stock_entry_date()
+            if entry is not None:
+                self.settings_stock_date.setDate(
+                    QDate(entry.year, entry.month, entry.day)
+                )
+            return
+
         entry = self._qdate_to_date(self.settings_stock_date.date())
         self.config["stock_entry_date"] = entry.isoformat()
         save_config(self.config)
@@ -430,6 +479,47 @@ class MainWindow(QMainWindow):
             "Редактирование остатков доступно только в этот день на вкладке «Учёт».",
         )
         self._load_table()
+
+    def _clear_all_data(self) -> None:
+        """Полная очистка базы после подтверждения и пароля."""
+        answer = QMessageBox.warning(
+            self,
+            "Очистить данные",
+            "Будут удалены ВСЕ операции учёта и каталог номенклатуры.\n"
+            "Это действие нельзя отменить.\n\n"
+            "Продолжить?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        if not self._ask_settings_password("Очистить данные"):
+            return
+
+        try:
+            stats = self.db.clear_all_data()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(
+                self,
+                "Очистить данные",
+                f"Не удалось очистить базу:\n{exc}",
+            )
+            return
+
+        self._load_table()
+        self.settings_status.setText(
+            f"База очищена. Удалено операций: {stats['operations']}, "
+            f"позиций номенклатуры: {stats['nomenclature']}."
+        )
+        QMessageBox.information(
+            self,
+            "Очистить данные",
+            "Данные удалены.\n"
+            f"Операций: {stats['operations']}\n"
+            f"Номенклатура: {stats['nomenclature']}\n"
+            "Каталог повторно загружен из шаблона (если доступен).",
+        )
 
     def _update_balance_mode_hint(self) -> None:
         """Подсказка режима остатков в шапке учёта."""

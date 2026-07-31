@@ -761,6 +761,25 @@ class Database:
             conn.commit()
             return cursor.rowcount > 0
 
+    def clear_all_data(self) -> dict[str, int]:
+        """
+        Полная очистка учёта: удаляет все операции и каталог номенклатуры.
+        После очистки снова заполняет номенклатуру из Excel-шаблона (если есть).
+        Возвращает число удалённых строк по таблицам.
+        """
+        with self.connect() as conn:
+            ops = conn.execute("SELECT COUNT(*) AS cnt FROM operations").fetchone()
+            nom = conn.execute("SELECT COUNT(*) AS cnt FROM nomenclature").fetchone()
+            deleted_ops = int(ops["cnt"] if ops else 0)
+            deleted_nom = int(nom["cnt"] if nom else 0)
+            conn.execute("DELETE FROM operations")
+            conn.execute("DELETE FROM nomenclature")
+            conn.commit()
+
+        # Каталог снова из шаблона (как при первом запуске)
+        self._seed_nomenclature_once()
+        return {"operations": deleted_ops, "nomenclature": deleted_nom}
+
     # ------------------------------------------------------------------
     # Отчёты
     # ------------------------------------------------------------------

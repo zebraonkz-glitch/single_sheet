@@ -1,5 +1,5 @@
 """
-Генерация PDF-отчётов (fpdf2), формат A4.
+Генерация PDF-отчётов (fpdf2), формат A4 книжный (portrait).
 Кириллица через системный шрифт Windows (Arial) — без сети.
 """
 
@@ -55,15 +55,17 @@ def _fmt_date(value: Any) -> str:
 
 
 class ReportPDF(FPDF):
-    """PDF A4 с таблицей отчёта."""
+    """PDF A4 книжный с таблицей отчёта."""
 
     def __init__(self, title: str, subtitle: str = "") -> None:
-        super().__init__(orientation="L", unit="mm", format="A4")
+        super().__init__(orientation="P", unit="mm", format="A4")
         self.report_title = title
         self.report_subtitle = subtitle
         font_path = _find_cyrillic_font()
         self.add_font("ReportFont", "", str(font_path))
         self.set_auto_page_break(auto=True, margin=15)
+        # Узкие поля — больше места под колонки в книжной ориентации
+        self.set_margins(10, 12, 10)
 
     def header(self) -> None:
         self.set_font("ReportFont", size=14)
@@ -103,8 +105,8 @@ class ReportPDF(FPDF):
                 scale = usable / total
                 col_widths = [w * scale for w in col_widths]
 
-        self.set_font("ReportFont", size=9)
-        line_h = 7
+        self.set_font("ReportFont", size=8)
+        line_h = 6
 
         def draw_header() -> None:
             self.set_fill_color(230, 230, 230)
@@ -177,20 +179,21 @@ def generate_movements_pdf(
     )
     pdf.add_page()
 
+    # Ширины под A4 книжный (~190 мм); draw_table масштабирует под поля
     if detail_by == "by_item":
         if all_warehouses:
-            headers = ["Товар / дата", "Склад", "Приход", "Расход", "Перемещение*", "Итог"]
-            col_widths = [90, 35, 30, 30, 40, 30]
+            headers = ["Товар / дата", "Склад", "Приход", "Расход", "Перем.*", "Итог"]
+            col_widths = [55, 28, 24, 24, 28, 24]
         else:
-            headers = ["Товар / дата", "Приход", "Расход", "Перемещение*", "Итог"]
-            col_widths = [110, 35, 35, 40, 35]
+            headers = ["Товар / дата", "Приход", "Расход", "Перем.*", "Итог"]
+            col_widths = [70, 28, 28, 32, 28]
     else:
         if all_warehouses:
-            headers = ["Дата", "Склад", "Товар", "Приход", "Расход", "Перемещение*", "Итог"]
-            col_widths = [26, 30, 70, 28, 28, 35, 28]
+            headers = ["Дата", "Склад", "Товар", "Приход", "Расход", "Перем.*", "Итог"]
+            col_widths = [22, 24, 48, 22, 22, 26, 22]
         else:
-            headers = ["Дата", "Товар", "Приход", "Расход", "Перемещение*", "Итог"]
-            col_widths = [28, 90, 30, 30, 35, 30]
+            headers = ["Дата", "Товар", "Приход", "Расход", "Перем.*", "Итог"]
+            col_widths = [22, 70, 24, 24, 26, 24]
 
     table_rows: list[list[str]] = []
     row_kinds: list[str] = []
@@ -356,14 +359,14 @@ def generate_stock_pdf(
             ]
             for r in rows
         ]
-        col_widths = [40, 160, 40]
+        col_widths = [40, 120, 30]
     else:
         headers = ["Наименование", "Остаток"]
         table_rows = [
             [str(r.get("item_name") or ""), _fmt_num(r.get("final_stock"))]
             for r in rows
         ]
-        col_widths = [200, 40]
+        col_widths = [155, 35]
     if not table_rows:
         table_rows = [["Нет данных", "—"]] if not all_warehouses else [["—", "Нет данных", "—"]]
 
