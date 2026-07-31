@@ -182,11 +182,26 @@ def generate_movements_pdf(
     # Ширины под A4 книжный (~190 мм); draw_table масштабирует под поля
     if detail_by == "by_item":
         if all_warehouses:
-            headers = ["Товар / дата", "Склад", "Приход", "Расход", "Перем.*", "Итог"]
-            col_widths = [55, 28, 24, 24, 28, 24]
+            headers = [
+                "Товар / дата",
+                "Склад",
+                "Начало",
+                "Приход",
+                "Расход",
+                "Перем.*",
+                "Конец",
+            ]
+            col_widths = [42, 24, 22, 22, 22, 26, 22]
         else:
-            headers = ["Товар / дата", "Приход", "Расход", "Перем.*", "Итог"]
-            col_widths = [70, 28, 28, 32, 28]
+            headers = [
+                "Товар / дата",
+                "Начало",
+                "Приход",
+                "Расход",
+                "Перем.*",
+                "Конец",
+            ]
+            col_widths = [55, 25, 25, 25, 28, 25]
     else:
         if all_warehouses:
             headers = ["Дата", "Склад", "Товар", "Приход", "Расход", "Перем.*", "Итог"]
@@ -214,20 +229,22 @@ def generate_movements_pdf(
                         [
                             "Итого",
                             "",
+                            _fmt_num(r.get("initial_stock")),
                             _fmt_num(r.get("incoming")),
                             _fmt_num(r.get("consumption")),
                             _fmt_num(r.get("move_stock")),
-                            _fmt_num(r.get("total")),
+                            _fmt_num(r.get("final_stock")),
                         ]
                     )
                 else:
                     table_rows.append(
                         [
                             "Итого",
+                            _fmt_num(r.get("initial_stock")),
                             _fmt_num(r.get("incoming")),
                             _fmt_num(r.get("consumption")),
                             _fmt_num(r.get("move_stock")),
-                            _fmt_num(r.get("total")),
+                            _fmt_num(r.get("final_stock")),
                         ]
                     )
             else:
@@ -236,20 +253,22 @@ def generate_movements_pdf(
                         [
                             _fmt_date(r.get("operation_date")),
                             wh,
+                            _fmt_num(r.get("initial_stock")),
                             _fmt_num(r.get("incoming")),
                             _fmt_num(r.get("consumption")),
                             _fmt_num(r.get("move_stock")),
-                            _fmt_num(r.get("total")),
+                            _fmt_num(r.get("final_stock")),
                         ]
                     )
                 else:
                     table_rows.append(
                         [
                             _fmt_date(r.get("operation_date")),
+                            _fmt_num(r.get("initial_stock")),
                             _fmt_num(r.get("incoming")),
                             _fmt_num(r.get("consumption")),
                             _fmt_num(r.get("move_stock")),
-                            _fmt_num(r.get("total")),
+                            _fmt_num(r.get("final_stock")),
                         ]
                     )
         else:
@@ -318,11 +337,18 @@ def generate_movements_pdf(
     )
     pdf.set_font("ReportFont", size=8)
     pdf.ln(2)
-    pdf.multi_cell(
-        0,
-        5,
-        "* Перемещение указано справочно и не входит в итог. Итог = приход − расход.",
-    )
+    if detail_by == "by_item":
+        note = (
+            "* Перемещение указано справочно. "
+            "Начало / конец — остатки на дату строки. "
+            "В итоге: начало — на первую дату, конец — на последнюю."
+        )
+    else:
+        note = (
+            "* Перемещение указано справочно и не входит в итог. "
+            "Итог = приход − расход."
+        )
+    pdf.multi_cell(0, 5, note)
     pdf.output(str(out_path))
     return out_path
 

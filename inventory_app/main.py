@@ -610,33 +610,37 @@ class MainWindow(QMainWindow):
                         headers = [
                             "Товар / дата",
                             "Склад",
+                            "На начало",
                             "Приход",
                             "Расход",
                             "Перемещение*",
-                            "Итог",
+                            "На конец",
                         ]
                         keys = [
                             "item_name",
                             "warehouse_name",
+                            "initial_stock",
                             "incoming",
                             "consumption",
                             "move_stock",
-                            "total",
+                            "final_stock",
                         ]
                     else:
                         headers = [
                             "Товар / дата",
+                            "На начало",
                             "Приход",
                             "Расход",
                             "Перемещение*",
-                            "Итог",
+                            "На конец",
                         ]
                         keys = [
                             "item_name",
+                            "initial_stock",
                             "incoming",
                             "consumption",
                             "move_stock",
-                            "total",
+                            "final_stock",
                         ]
                 else:
                     if all_warehouses:
@@ -791,10 +795,17 @@ class MainWindow(QMainWindow):
             mode_label = (
                 "по датам" if detail_by == DETAIL_BY_DATE else "по товару"
             )
-            status += (
-                f". Детализация: {mode_label}. "
-                "*Перемещение — справочно, в итог не входит (итог = приход − расход)."
-            )
+            status += f". Детализация: {mode_label}."
+            if detail_by == DETAIL_BY_ITEM:
+                status += (
+                    " *Перемещение — справочно. "
+                    "На начало / на конец — остатки на дату строки."
+                )
+            else:
+                status += (
+                    " *Перемещение — справочно, в итог не входит "
+                    "(итог = приход − расход)."
+                )
         elif report_kind == REPORT_STOCK and self.report_hide_zero.isChecked():
             status += ". Нулевые остатки скрыты"
         self.report_status.setText(status)

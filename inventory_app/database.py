@@ -820,9 +820,11 @@ class Database:
                     warehouse_id AS warehouse_id,
                     operation_date AS operation_date,
                     item_name AS item_name,
+                    initial_stock AS initial_stock,
                     incoming AS incoming,
                     (consumption_1 + consumption_2 + consumption_3) AS consumption,
                     move_stock AS move_stock,
+                    final_stock AS final_stock,
                     (incoming - (consumption_1 + consumption_2 + consumption_3)) AS total
                 FROM operations
                 WHERE operation_date >= ?
@@ -843,9 +845,11 @@ class Database:
                     warehouse_id AS warehouse_id,
                     operation_date AS operation_date,
                     item_name AS item_name,
+                    initial_stock AS initial_stock,
                     incoming AS incoming,
                     (consumption_1 + consumption_2 + consumption_3) AS consumption,
                     move_stock AS move_stock,
+                    final_stock AS final_stock,
                     (incoming - (consumption_1 + consumption_2 + consumption_3)) AS total
                 FROM operations
                 WHERE warehouse_id = ?
@@ -930,34 +934,62 @@ class Database:
                     "group_label": header_label,
                     "operation_date": key if detail_by == "by_date" else "",
                     "item_name": key if detail_by == "by_item" else header_label,
+                    "initial_stock": None,
                     "incoming": None,
                     "consumption": None,
                     "move_stock": None,
+                    "final_stock": None,
                     "total": None,
                 }
             )
             for row in group:
                 detail = dict(row)
                 detail["row_kind"] = "detail"
+                # Если конец не сохранён — считаем по формуле строки
+                init = float(detail.get("initial_stock") or 0)
+                incoming = float(detail.get("incoming") or 0)
+                move = float(detail.get("move_stock") or 0)
+                cons = float(detail.get("consumption") or 0)
+                if detail.get("final_stock") is None:
+                    detail["final_stock"] = init + incoming + move - cons
                 result.append(detail)
 
             sub_in = sum(float(r.get("incoming") or 0) for r in group)
             sub_cons = sum(float(r.get("consumption") or 0) for r in group)
             sub_move = sum(float(r.get("move_stock") or 0) for r in group)
-            result.append(
-                {
-                    "row_kind": "subtotal",
-                    "group_title": title,
-                    "group_label": "Итого",
-                    "operation_date": "",
-                    "item_name": "Итого",
-                    "warehouse_id": None,
-                    "incoming": sub_in,
-                    "consumption": sub_cons,
-                    "move_stock": sub_move,
-                    "total": sub_in - sub_cons,
-                }
-            )
+            # По товару: на начало — у первой даты группы, на конец — у последней
+            first_initial = float(group[0].get("initial_stock") or 0)
+            last_final = group[-1].get("final_stock")
+            if last_final is None:
+                last = group[-1]
+                last_final = (
+                    float(last.get("initial_stock") or 0)
+                    + float(last.get("incoming") or 0)
+                    + float(last.get("move_stock") or 0)
+                    - float(last.get("consumption") or 0)
+                )
+            else:
+                last_final = float(last_final or 0)
+
+            subtotal: dict[str, Any] = {
+                "row_kind": "subtotal",
+                "group_title": title,
+                "group_label": "Итого",
+                "operation_date": "",
+                "item_name": "Итого",
+                "warehouse_id": None,
+                "incoming": sub_in,
+                "consumption": sub_cons,
+                "move_stock": sub_move,
+                "total": sub_in - sub_cons,
+            }
+            if detail_by == "by_item":
+                subtotal["initial_stock"] = first_initial
+                subtotal["final_stock"] = last_final
+            else:
+                subtotal["initial_stock"] = None
+                subtotal["final_stock"] = None
+            result.append(subtotal)
 
         return result
 
