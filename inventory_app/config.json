@@ -1,0 +1,19 @@
+{
+  "warehouses": [
+    {
+      "id": "A",
+      "name": "Склад А"
+    },
+    {
+      "id": "B",
+      "name": "Склад Б"
+    }
+  ],
+  "paths": {
+    "db": "db/inventory.db",
+    "backups": "backups",
+    "reports": "reports",
+    "shablon": "../shablon"
+  },
+  "last_backup_date": "2026-07-31"
+}

@@ -141,3 +141,19 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Приложение складского учёта
+inventory_app/db/*.db
+inventory_app/db/*.db-journal
+inventory_app/backups/*.zip
+inventory_app/reports/*.pdf
+~$*.xlsx
