@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import QDate, QLockFile, QRegularExpression, QUrl, Qt
+from PyQt6.QtCore import QDate, QLockFile, QRegularExpression, QTimer, QUrl, Qt
 from PyQt6.QtGui import (
     QBrush,
     QCloseEvent,
@@ -1271,21 +1271,32 @@ class MainWindow(QMainWindow):
                     self._current_date().isoformat(),
                     item_name or f"row:{row}",
                 )
-                if parsed == 0:
-                    self._last_move_prompt.pop(prompt_key, None)
-                elif self._last_move_prompt.get(prompt_key) != parsed:
+                if self._last_move_prompt.get(prompt_key) != parsed:
                     self._last_move_prompt[prompt_key] = parsed
                     self._move_prompt_open = True
                     try:
-                        self._offer_pair_move(row, parsed)
+                        self._sync_pair_move(row, parsed)
                     finally:
                         self._move_prompt_open = False
 
         # Автосохранение при любом осмысленном изменении строки с наименованием
         self._autosave_row(row)
 
-    def _offer_pair_move(self, row: int, move_value: float) -> None:
-        """Предлагает создать зеркальную запись на другом складе."""
+    def _show_auto_info(self, title: str, text: str, msec: int = 2000) -> None:
+        """Информационное окно без кнопок, закрывается через msec мс."""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(QMessageBox.StandardButton.NoButton)
+        QTimer.singleShot(msec, msg.accept)
+        msg.exec()
+
+    def _sync_pair_move(self, row: int, move_value: float) -> None:
+        """
+        Сразу создаёт/обновляет зеркальное перемещение на другом складе
+        (без запроса подтверждения). При нуле — обнуляет парную запись.
+        """
         name_item = self.table.item(row, COL_NAME)
         item_name = (name_item.text() if name_item else "").strip()
         if not item_name:
@@ -1296,27 +1307,16 @@ class MainWindow(QMainWindow):
             return
 
         other_name = self._warehouse_name(other_id)
-        sign_hint = f"+{abs(move_value)}" if move_value < 0 else f"-{abs(move_value)}"
-        answer = QMessageBox.question(
-            self,
-            "Перемещение между складами",
-            (
-                f"Вы указали перемещение {_fmt_number(move_value)} ед. для «{item_name}».\n"
-                f"Создать на «{other_name}» запись с перемещением {sign_hint}?"
-            ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-
         op_date = self._current_date().isoformat()
-        # Берём уже существующую строку на другом складе (если есть) одним запросом
         other_rows = self.db.get_data(other_id, op_date, fill_nomenclature=False)
         existing = next(
             (r for r in other_rows if r.get("item_name") == item_name),
             None,
         )
+
+        # Ноль и нет строки на другом складе — создавать нечего
+        if abs(move_value) < 1e-12 and existing is None:
+            return
 
         if existing:
             pair = dict(existing)
@@ -1340,7 +1340,29 @@ class MainWindow(QMainWindow):
         try:
             self.db.upsert_row(pair)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Ошибка", f"Не удалось создать парную запись:\n{exc}")
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Не удалось обновить парную запись:\n{exc}",
+            )
+            return
+
+        if abs(move_value) < 1e-12:
+            info = (
+                f"На «{other_name}» для «{item_name}» "
+                f"перемещение обнулено."
+            )
+        else:
+            sign_hint = (
+                f"+{_fmt_number(abs(move_value))}"
+                if move_value < 0
+                else f"-{_fmt_number(abs(move_value))}"
+            )
+            info = (
+                f"На «{other_name}» для «{item_name}» "
+                f"записано перемещение {sign_hint}."
+            )
+        self._show_auto_info("Перемещение", info, 2000)
 
     # ------------------------------------------------------------------
     # Кнопки
