@@ -1283,14 +1283,39 @@ class MainWindow(QMainWindow):
         self._autosave_row(row)
 
     def _show_auto_info(self, title: str, text: str, msec: int = 2000) -> None:
-        """Информационное окно без кнопок, закрывается через msec мс."""
+        """Информационное окно без кнопок; не забирает фокус, закрывается само."""
+        # Держим ссылку, иначе GC может закрыть окно сразу
         msg = QMessageBox(self)
         msg.setIcon(QMessageBox.Icon.Information)
         msg.setWindowTitle(title)
         msg.setText(text)
         msg.setStandardButtons(QMessageBox.StandardButton.NoButton)
-        QTimer.singleShot(msec, msg.accept)
-        msg.exec()
+        msg.setWindowModality(Qt.WindowModality.NonModal)
+        msg.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        flags = msg.windowFlags()
+        msg.setWindowFlags(flags | Qt.WindowType.Tool)
+        self._move_toast = msg
+
+        def _close_toast() -> None:
+            toast = getattr(self, "_move_toast", None)
+            if toast is not None:
+                toast.close()
+                self._move_toast = None
+
+        QTimer.singleShot(msec, _close_toast)
+        msg.show()
+
+    def _restore_table_cell_focus(self, row: int, col: int) -> None:
+        """Возвращает фокус и выделение на ячейку таблицы учёта."""
+        if row < 0 or row >= self.table.rowCount():
+            return
+        if col < 0 or col >= self.table.columnCount():
+            return
+        self.table.setFocus(Qt.FocusReason.OtherFocusReason)
+        self.table.setCurrentCell(row, col)
+        item = self.table.item(row, col)
+        if item is not None:
+            self.table.scrollToItem(item)
 
     def _sync_pair_move(self, row: int, move_value: float) -> None:
         """
@@ -1345,6 +1370,7 @@ class MainWindow(QMainWindow):
                 "Ошибка",
                 f"Не удалось обновить парную запись:\n{exc}",
             )
+            self._restore_table_cell_focus(row, COL_MOVE)
             return
 
         if abs(move_value) < 1e-12:
@@ -1363,6 +1389,10 @@ class MainWindow(QMainWindow):
                 f"записано перемещение {sign_hint}."
             )
         self._show_auto_info("Перемещение", info, 2000)
+        # Фокус остаётся на ячейке «Перемещение»
+        self._restore_table_cell_focus(row, COL_MOVE)
+        # На всякий случай ещё раз после отрисовки окна
+        QTimer.singleShot(0, lambda: self._restore_table_cell_focus(row, COL_MOVE))
 
     # ------------------------------------------------------------------
     # Кнопки

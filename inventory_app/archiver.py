@@ -1,10 +1,9 @@
 """
 Ежедневная архивация SQLite-базы в ZIP.
 
-Правило: не чаще одного архива в календарный день.
-Имя файла: backup_YYYY-MM-DD.zip
-Внутри ZIP — копия inventory.db.
-Хранится не более MAX_BACKUPS последних копий.
+При каждом закрытии приложения пишется backup_YYYY-MM-DD.zip
+с актуальным состоянием БД. Если файл за сегодня уже есть — перезаписывается.
+Хранится не более MAX_BACKUPS последних копий (по разным датам).
 """
 
 from __future__ import annotations
@@ -98,15 +97,16 @@ def perform_daily_backup(
     update_config: bool = True,
 ) -> Path | None:
     """
-    Создаёт ZIP с копией БД, если за сегодня архива ещё нет.
+    Пишет ZIP с актуальной копией БД за указанный день (по умолчанию — сегодня).
 
-    Проверки:
-    1) last_backup_date из аргумента / config.json совпадает с сегодня — пропуск
-    2) файл backup_YYYY-MM-DD.zip уже есть — пропуск (дата в конфиге синхронизируется)
+    Если backup_YYYY-MM-DD.zip уже есть — файл перезаписывается свежим снимком.
+    После записи оставляет не больше MAX_BACKUPS файлов.
+    Возвращает путь к ZIP или None, если БД ещё нет.
 
-    После работы оставляет не больше MAX_BACKUPS файлов.
-    Возвращает путь к созданному ZIP или None, если архивация не нужна / БД нет.
+    Параметр last_backup_date сохранён для совместимости вызовов (не влияет на запись).
     """
+    _ = last_backup_date  # больше не блокирует повторную запись в тот же день
+
     cfg_path = config_path or CONFIG_PATH
     config = load_config(cfg_path) if cfg_path.exists() else {}
     paths = ensure_directories(config) if config else get_paths()
@@ -116,32 +116,13 @@ def perform_daily_backup(
     backups.mkdir(parents=True, exist_ok=True)
 
     day = today or date.today()
-    last = _normalize_date(
-        last_backup_date
-        if last_backup_date is not None
-        else config.get("last_backup_date")
-    )
-
-    # Уже архивировали сегодня (по конфигу)
-    if last == day:
-        prune_old_backups(backups)
-        return None
-
     zip_path = backups / backup_zip_name(day)
 
-    # Архив за сегодня уже лежит в папке — не дублируем
-    if zip_path.is_file():
-        if update_config and cfg_path.exists():
-            config["last_backup_date"] = day.isoformat()
-            save_config(config, cfg_path)
-        prune_old_backups(backups)
-        return None
-
     if not db.is_file():
-        # Нечего архивировать — БД ещё не создана
         prune_old_backups(backups)
         return None
 
+    # mode "w" перезаписывает существующий ZIP актуальным содержимым БД
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zipf:
         zipf.write(db, arcname="inventory.db")
 
@@ -158,26 +139,25 @@ def on_app_close(
     backups_dir: Path | str | None = None,
 ) -> Path | None:
     """
-    Вызов из closeEvent главного окна (этап 4).
-    Обёртка над perform_daily_backup с путями из config.json.
+    Вызов из closeEvent главного окна.
+    Всегда обновляет сегодняшний бэкап актуальным состоянием БД.
     """
     return perform_daily_backup(db_path=db_path, backups_dir=backups_dir)
 
 
 def _demo() -> None:
-    """Проверка: два вызова подряд → один ZIP; повтор во второй день → новый."""
+    """Проверка: повтор в тот же день перезаписывает ZIP свежими данными."""
     import sys
     import tempfile
 
     sys.stdout.reconfigure(encoding="utf-8")
 
-    # Изолированный тест в temp, чтобы не трогать рабочий config/backups
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         db_file = tmp_path / "inventory.db"
         backups = tmp_path / "backups"
         backups.mkdir()
-        db_file.write_bytes(b"SQLite demo content")
+        db_file.write_bytes(b"SQLite content v1")
 
         cfg = {
             "paths": {
@@ -201,16 +181,22 @@ def _demo() -> None:
             config_path=cfg_path,
         )
         assert first is not None and first.name == "backup_2026-07-31.zip"
+        with zipfile.ZipFile(first, "r") as zf:
+            assert zf.read("inventory.db") == b"SQLite content v1"
         print(f"1-й вызов ({day1}): создан {first.name}")
 
+        # Изменили БД и закрыли снова в тот же день — ZIP перезаписан
+        db_file.write_bytes(b"SQLite content v2 FRESH")
         second = perform_daily_backup(
             db_path=db_file,
             backups_dir=backups,
             today=day1,
             config_path=cfg_path,
         )
-        assert second is None
-        print(f"2-й вызов ({day1}): пропуск (уже есть)")
+        assert second is not None and second == first
+        with zipfile.ZipFile(second, "r") as zf:
+            assert zf.read("inventory.db") == b"SQLite content v2 FRESH"
+        print(f"2-й вызов ({day1}): перезаписан актуальными данными")
 
         third = perform_daily_backup(
             db_path=db_file,
@@ -224,7 +210,6 @@ def _demo() -> None:
         zips = sorted(p.name for p in backups.glob("backup_*.zip"))
         assert zips == ["backup_2026-07-31.zip", "backup_2026-08-01.zip"]
 
-        # Лимит 7: создаём 9 архивов — остаются 7 новых
         for i in range(1, 10):
             (backups / f"backup_2026-06-{i:02d}.zip").write_bytes(b"PK\x03\x04fake")
         removed = prune_old_backups(backups, keep=MAX_BACKUPS)
@@ -233,22 +218,16 @@ def _demo() -> None:
         assert len(removed) >= 1
         print(f"prune: удалено {len(removed)}, осталось {len(left)}")
 
-        # Проверяем содержимое ZIP
-        with zipfile.ZipFile(first, "r") as zf:
-            assert "inventory.db" in zf.namelist()
-            assert zf.read("inventory.db") == b"SQLite demo content"
-
         updated = load_config(cfg_path)
         assert updated["last_backup_date"] == "2026-08-01"
         print(f"last_backup_date в конфиге: {updated['last_backup_date']}")
         print("OK: архиватор проверен")
 
-    # Дополнительно: реальный бэкап рабочей БД (если есть)
     real = perform_daily_backup()
     if real:
-        print(f"Рабочий бэкап создан: {real}")
+        print(f"Рабочий бэкап обновлён: {real}")
     else:
-        print("Рабочий бэкап за сегодня уже есть или БД отсутствует — пропуск")
+        print("Рабочий бэкап: БД отсутствует — пропуск")
 
 
 if __name__ == "__main__":
