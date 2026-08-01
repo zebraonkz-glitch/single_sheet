@@ -4,6 +4,7 @@
 Правило: не чаще одного архива в календарный день.
 Имя файла: backup_YYYY-MM-DD.zip
 Внутри ZIP — копия inventory.db.
+Хранится не более MAX_BACKUPS последних копий.
 """
 
 from __future__ import annotations
@@ -20,6 +21,9 @@ from app_paths import (
     save_config,
 )
 
+# Максимум ежедневных ZIP в папке backups
+MAX_BACKUPS = 7
+
 
 def backup_zip_name(backup_date: date | None = None) -> str:
     """Имя архива для указанной даты."""
@@ -30,6 +34,47 @@ def backup_zip_name(backup_date: date | None = None) -> str:
 def backup_exists(backups_dir: Path, backup_date: date | None = None) -> bool:
     """Проверяет наличие ZIP за указанную дату в папке backups."""
     return (Path(backups_dir) / backup_zip_name(backup_date)).is_file()
+
+
+def list_backup_zips(backups_dir: Path | str) -> list[Path]:
+    """Список backup_*.zip, от новых к старым (по дате в имени)."""
+    folder = Path(backups_dir)
+    if not folder.is_dir():
+        return []
+
+    def sort_key(path: Path) -> tuple:
+        name = path.stem  # backup_YYYY-MM-DD
+        if name.startswith("backup_") and len(name) >= 17:
+            try:
+                return (0, date.fromisoformat(name[7:17]), path.name)
+            except ValueError:
+                pass
+        return (1, date.min, path.name)
+
+    zips = [p for p in folder.glob("backup_*.zip") if p.is_file()]
+    return sorted(zips, key=sort_key, reverse=True)
+
+
+def prune_old_backups(
+    backups_dir: Path | str,
+    *,
+    keep: int = MAX_BACKUPS,
+) -> list[Path]:
+    """
+    Удаляет старые ZIP, оставляя не более keep самых новых.
+    Возвращает список удалённых путей.
+    """
+    if keep < 1:
+        keep = 1
+    zips = list_backup_zips(backups_dir)
+    removed: list[Path] = []
+    for old in zips[keep:]:
+        try:
+            old.unlink(missing_ok=True)
+            removed.append(old)
+        except OSError:
+            continue
+    return removed
 
 
 def _normalize_date(value: date | datetime | str | None) -> date | None:
@@ -59,6 +104,7 @@ def perform_daily_backup(
     1) last_backup_date из аргумента / config.json совпадает с сегодня — пропуск
     2) файл backup_YYYY-MM-DD.zip уже есть — пропуск (дата в конфиге синхронизируется)
 
+    После работы оставляет не больше MAX_BACKUPS файлов.
     Возвращает путь к созданному ZIP или None, если архивация не нужна / БД нет.
     """
     cfg_path = config_path or CONFIG_PATH
@@ -78,6 +124,7 @@ def perform_daily_backup(
 
     # Уже архивировали сегодня (по конфигу)
     if last == day:
+        prune_old_backups(backups)
         return None
 
     zip_path = backups / backup_zip_name(day)
@@ -87,10 +134,12 @@ def perform_daily_backup(
         if update_config and cfg_path.exists():
             config["last_backup_date"] = day.isoformat()
             save_config(config, cfg_path)
+        prune_old_backups(backups)
         return None
 
     if not db.is_file():
         # Нечего архивировать — БД ещё не создана
+        prune_old_backups(backups)
         return None
 
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zipf:
@@ -100,6 +149,7 @@ def perform_daily_backup(
         config["last_backup_date"] = day.isoformat()
         save_config(config, cfg_path)
 
+    prune_old_backups(backups)
     return zip_path
 
 
@@ -173,6 +223,15 @@ def _demo() -> None:
 
         zips = sorted(p.name for p in backups.glob("backup_*.zip"))
         assert zips == ["backup_2026-07-31.zip", "backup_2026-08-01.zip"]
+
+        # Лимит 7: создаём 9 архивов — остаются 7 новых
+        for i in range(1, 10):
+            (backups / f"backup_2026-06-{i:02d}.zip").write_bytes(b"PK\x03\x04fake")
+        removed = prune_old_backups(backups, keep=MAX_BACKUPS)
+        left = list_backup_zips(backups)
+        assert len(left) == MAX_BACKUPS, left
+        assert len(removed) >= 1
+        print(f"prune: удалено {len(removed)}, осталось {len(left)}")
 
         # Проверяем содержимое ZIP
         with zipfile.ZipFile(first, "r") as zf:

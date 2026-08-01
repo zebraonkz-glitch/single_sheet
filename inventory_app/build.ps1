@@ -58,15 +58,11 @@ $Excludes = @(
   "pandas",
   "ssl",
   "_ssl",
-  "http",
-  "http.client",
-  "urllib",
-  "urllib.request",
-  "xmlrpc",
-  "multiprocessing.popen_spawn_win32"
+  "xmlrpc"
 )
 
-# fpdf2 требует fontTools при импорте — не исключаем
+# fpdf2 требует fontTools и urllib при импорте — не исключаем
+# SSL DLL убираем после сборки (офлайн-приложение)
 
 $ExcludeArgs = @()
 foreach ($mod in $Excludes) {

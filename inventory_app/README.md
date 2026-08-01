@@ -88,12 +88,8 @@ Excel в `shablon/` нужен **один раз** — при пустом ка�
 
 ## Очистка архивов
 
-Папка `backups/` растёт со временем. Периодически удаляйте старые ZIP вручную, например старше 30 дней:
-
-```powershell
-cd d:\20260725_work\single_sheet\inventory_app\backups
-Get-ChildItem *.zip | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) } | Remove-Item
-```
+При каждом бэкапе автоматически оставляются только **7** последних ZIP
+(`backup_YYYY-MM-DD.zip`). Более старые удаляются.
 
 ## Критерии приёмки
 
